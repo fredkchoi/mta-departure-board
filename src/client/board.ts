@@ -1,6 +1,7 @@
 import { fetchDepartures } from './api.js';
 import { createLineBullet } from './lines.js';
-import type { AppConfig, Departure } from './types.js';
+import { directionLabel } from './direction-label.js';
+import type { AppConfig, Departure, SelectedStation } from './types.js';
 
 const REFRESH_MS = 15_000;
 const DEPART_ANIM_MS = 900; // text shows "Departed" then collapses
@@ -22,14 +23,13 @@ export function renderBoard(config: AppConfig, onConfigure: () => void): void {
   const topBar = document.createElement('div');
   topBar.className = 'board-topbar';
 
-  const title = document.createElement('span');
-  title.className = 'board-title';
-  title.textContent = 'NYC Subway Departures Board';
+  const logo = document.createElement('img');
+  logo.className = 'board-logo';
+  logo.src = '/mta-logo.svg';
+  logo.alt = 'MTA';
 
-  const clock = document.createElement('span');
-  clock.className = 'board-clock';
-  updateClock(clock);
-  setInterval(() => updateClock(clock), 1000);
+  const spacer = document.createElement('div');
+  spacer.className = 'board-spacer';
 
   const configBtn = document.createElement('button');
   configBtn.className = 'btn-configure';
@@ -39,13 +39,21 @@ export function renderBoard(config: AppConfig, onConfigure: () => void): void {
     onConfigure();
   });
 
-  topBar.appendChild(title);
-  topBar.appendChild(clock);
+  const clock = document.createElement('span');
+  clock.className = 'board-clock';
+  updateClock(clock);
+  setInterval(() => updateClock(clock), 1000);
+
+  topBar.appendChild(logo);
+  topBar.appendChild(spacer);
   topBar.appendChild(configBtn);
+  topBar.appendChild(clock);
   wrap.appendChild(topBar);
 
   const boardEl = document.createElement('div');
   boardEl.id = 'board-content';
+  const colCount = Math.max(1, Math.min(config.stations.length, 4));
+  boardEl.style.gridTemplateColumns = `repeat(${colCount}, 1fr)`;
   wrap.appendChild(boardEl);
 
   document.body.appendChild(wrap);
@@ -58,6 +66,7 @@ function updateClock(el: HTMLElement): void {
   el.textContent = new Date().toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
   });
 }
 
@@ -105,7 +114,7 @@ async function refresh(config: AppConfig, boardEl: HTMLElement): Promise<void> {
       const stationDeps = departures.filter(
         (d) => stationStopIds.has(d.stopId) && selectedRoutes.has(d.line),
       );
-      fragment.appendChild(renderStation(station.stationName, stationDeps));
+      fragment.appendChild(renderStation(station, stationDeps));
     }
 
     const updatedEl = document.createElement('div');
@@ -136,48 +145,62 @@ function animateDeparture(row: HTMLElement): void {
     timeCell.className = 'dep-time departed-text';
   }
   row.classList.add('row-departing');
-
-  // Lock the current height, then collapse on the next frame
-  setTimeout(() => {
-    row.style.maxHeight = `${row.offsetHeight}px`;
-    row.style.overflow = 'hidden';
-    requestAnimationFrame(() => {
-      row.style.maxHeight = '0';
-      row.style.paddingTop = '0';
-      row.style.paddingBottom = '0';
-      row.style.borderBottomWidth = '0';
-    });
-  }, 450);
 }
 
-function renderStation(name: string, departures: Departure[]): HTMLElement {
+function renderStation(station: SelectedStation, departures: Departure[]): HTMLElement {
   const section = document.createElement('div');
   section.className = 'station-section';
 
   const header = document.createElement('div');
   header.className = 'station-header';
-  header.textContent = name.toUpperCase();
+  header.textContent = station.stationName;
   section.appendChild(header);
+
+  const maxRows = station.directions.length > 1 ? 6 : 12;
+  for (const dir of station.directions) {
+    const dirDeps = departures.filter((d) => d.direction === dir);
+    const label = directionLabel(station.selectedRoutes, dir);
+    section.appendChild(renderDirectionSubsection(label, dirDeps, maxRows));
+  }
+
+  return section;
+}
+
+function renderDirectionSubsection(label: string, departures: Departure[], maxRows: number): HTMLElement {
+  const sub = document.createElement('div');
+  sub.className = 'direction-subsection';
+
+  const dirHeader = document.createElement('div');
+  dirHeader.className = 'direction-header';
+  dirHeader.textContent = label;
+  sub.appendChild(dirHeader);
+
+  sub.appendChild(renderDepTable(departures, maxRows));
+  return sub;
+}
+
+function renderDepTable(departures: Departure[], maxRows: number = 12): HTMLElement {
+  const container = document.createElement('div');
 
   const colHeaders = document.createElement('div');
   colHeaders.className = 'col-headers';
   colHeaders.innerHTML =
     '<span>Line</span><span class="col-dest">To</span><span class="col-time">Arrives</span>';
-  section.appendChild(colHeaders);
+  container.appendChild(colHeaders);
 
   if (!departures.length) {
     const empty = document.createElement('div');
     empty.className = 'no-deps';
     empty.textContent = 'No upcoming departures';
-    section.appendChild(empty);
-    return section;
+    container.appendChild(empty);
+    return container;
   }
 
-  for (const dep of departures.slice(0, 8)) {
-    section.appendChild(renderRow(dep));
+  for (const dep of departures.slice(0, maxRows)) {
+    container.appendChild(renderRow(dep));
   }
 
-  return section;
+  return container;
 }
 
 function renderRow(dep: Departure): HTMLElement {
