@@ -7,6 +7,7 @@ const REFRESH_MS = 15_000;
 const DEPART_ANIM_MS = 900; // text shows "Departed" then collapses
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
+let tickTimer: ReturnType<typeof setInterval> | null = null;
 let prevKeys = new Set<string>();
 
 function depKey(d: Departure): string {
@@ -36,6 +37,7 @@ export function renderBoard(config: AppConfig, onConfigure: () => void): void {
   configBtn.textContent = 'Configure';
   configBtn.addEventListener('click', () => {
     if (refreshTimer) clearInterval(refreshTimer);
+    if (tickTimer) clearInterval(tickTimer);
     onConfigure();
   });
 
@@ -60,6 +62,7 @@ export function renderBoard(config: AppConfig, onConfigure: () => void): void {
 
   refresh(config, boardEl);
   refreshTimer = setInterval(() => refresh(config, boardEl), REFRESH_MS);
+  tickTimer = setInterval(tickTimes, 30_000);
 }
 
 function updateClock(el: HTMLElement): void {
@@ -86,6 +89,10 @@ async function refresh(config: AppConfig, boardEl: HTMLElement): Promise<void> {
 
   try {
     const { departures, updatedAt } = await fetchDepartures(stopIds);
+
+    // Discard empty responses when we already have data — almost always a bad feed
+    if (departures.length === 0 && prevKeys.size > 0) return;
+
     const newKeys = new Set(departures.map(depKey));
 
     // Animate out any rows that have left the departure list
@@ -145,6 +152,22 @@ function animateDeparture(row: HTMLElement): void {
     timeCell.className = 'dep-time departed-text';
   }
   row.classList.add('row-departing');
+}
+
+function tickTimes(): void {
+  const now = Math.floor(Date.now() / 1000);
+  document.querySelectorAll<HTMLElement>('[data-departure-time]').forEach((row) => {
+    if (row.classList.contains('row-departing')) return;
+    const timeCell = row.querySelector<HTMLElement>('.dep-time');
+    if (!timeCell || timeCell.classList.contains('departed-text')) return;
+    const depTime = parseInt(row.dataset.departureTime!, 10);
+    if (isNaN(depTime)) return;
+    const minutesAway = Math.round((depTime - now) / 60);
+    if (isNaN(minutesAway)) return;
+    const isSoon = minutesAway <= 1;
+    timeCell.className = `dep-time${isSoon ? ' due-soon' : ''}`;
+    timeCell.textContent = isSoon ? 'Due' : `${minutesAway} min`;
+  });
 }
 
 function renderStation(station: SelectedStation, departures: Departure[]): HTMLElement {
@@ -207,6 +230,7 @@ function renderRow(dep: Departure): HTMLElement {
   const row = document.createElement('div');
   row.className = 'dep-row';
   row.dataset.key = depKey(dep);
+  row.dataset.departureTime = String(dep.departureTime);
 
   const bulletCell = document.createElement('div');
   bulletCell.className = 'dep-bullet';
