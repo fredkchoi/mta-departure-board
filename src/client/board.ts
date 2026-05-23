@@ -279,11 +279,6 @@ function renderDirectionSubsection(label: string, departures: Departure[], maxRo
 function renderDepTable(departures: Departure[], maxRows: number = 12): HTMLElement {
   const container = document.createElement('div');
 
-  const colHeaders = document.createElement('div');
-  colHeaders.className = 'col-headers';
-  colHeaders.innerHTML =
-    '<span>Line</span><span class="col-dest">To</span><span class="col-time">Arrives</span>';
-  container.appendChild(colHeaders);
 
   const rowCount = Math.min(departures.length || 6, maxRows);
   if (!departures.length) {
