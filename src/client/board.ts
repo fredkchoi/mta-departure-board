@@ -98,10 +98,12 @@ async function refresh(config: AppConfig, boardEl: HTMLElement): Promise<void> {
 
     const newKeys = new Set(departures.map(depKey));
 
-    // Animate out any rows that have left the departure list
+    // Animate out rows that departed — but only if at least one train survived.
+    // If every previous key is gone it's a feed refresh (trip IDs changed), not real departures.
     if (!isFirstLoad && prevKeys.size > 0) {
       const departedKeys = new Set([...prevKeys].filter((k) => !newKeys.has(k)));
-      if (departedKeys.size > 0) {
+      const someTrainsSurvived = departedKeys.size < prevKeys.size;
+      if (departedKeys.size > 0 && someTrainsSurvived) {
         boardEl.querySelectorAll<HTMLElement>('[data-key]').forEach((row) => {
           if (departedKeys.has(row.dataset.key!)) animateDeparture(row);
         });
@@ -240,8 +242,11 @@ function renderAlertBanner(alert: ServiceAlert): HTMLElement {
       : 'alert-info';
   banner.className = `alert-banner ${effectClass}`;
 
-  // Collapse any newlines/extra whitespace MTA embeds in alert text
-  const header = alert.header.replace(/\s+/g, ' ').trim();
+  const header = alert.header
+    .replace(/\s*\n\s*/g, '. ')  // newlines are sentence breaks
+    .replace(/\.\s*\.\s*/g, '. ')  // deduplicate if text already ended with a period
+    .replace(/\s+/g, ' ')
+    .trim();
 
   // Replace [7], [A/C/E], [N] etc. with inline route bullets
   const regex = /\[([A-Z0-9/]+)\]/g;
