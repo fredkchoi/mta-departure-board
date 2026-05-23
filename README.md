@@ -2,7 +2,7 @@
 
 A real-time MTA subway departure board for Raspberry Pi (or any machine). Open it in a browser to see upcoming trains before you leave the house.
 
-**No API key required** — the MTA's GTFS-Realtime feeds are freely accessible.
+**No API key required** — the MTA's GTFS-Realtime feeds are freely accessible. Service alerts are fetched from the MTA's consolidated alerts feed and displayed per station when active.
 
 ## Setup
 
@@ -34,7 +34,7 @@ Opens at `http://localhost:3000`. To auto-launch on boot, add `npm start` to you
 2. Search for your station(s) by name
 3. Toggle which lines and directions (Uptown/Downtown) to track
 4. Click **View Board** — your config is saved in the browser and persists across reloads
-5. The board auto-refreshes every 30 seconds
+5. The board auto-refreshes every 15 seconds and shows active MTA service alerts (suspensions, delays) above the departure table for affected stations
 6. Click **Configure** to change stations at any time
 
 ## Project structure

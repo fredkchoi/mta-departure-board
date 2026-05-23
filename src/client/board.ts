@@ -1,7 +1,7 @@
-import { fetchDepartures } from './api.js';
-import { createLineBullet } from './lines.js';
+import { fetchDepartures, fetchAlerts } from './api.js';
+import { createLineBullet, getLineStyle } from './lines.js';
 import { directionLabel } from './direction-label.js';
-import type { AppConfig, Departure, SelectedStation } from './types.js';
+import type { AppConfig, Departure, SelectedStation, ServiceAlert } from './types.js';
 
 const REFRESH_MS = 15_000;
 const DEPART_ANIM_MS = 900; // text shows "Departed" then collapses
@@ -88,7 +88,10 @@ async function refresh(config: AppConfig, boardEl: HTMLElement): Promise<void> {
   }
 
   try {
-    const { departures, updatedAt } = await fetchDepartures(stopIds);
+    const [{ departures, updatedAt }, alerts] = await Promise.all([
+      fetchDepartures(stopIds),
+      fetchAlerts(),
+    ]);
 
     // Discard empty responses when we already have data — almost always a bad feed
     if (departures.length === 0 && prevKeys.size > 0) return;
@@ -121,7 +124,10 @@ async function refresh(config: AppConfig, boardEl: HTMLElement): Promise<void> {
       const stationDeps = departures.filter(
         (d) => stationStopIds.has(d.stopId) && selectedRoutes.has(d.line),
       );
-      fragment.appendChild(renderStation(station, stationDeps));
+      const stationAlerts = alerts.filter((a) =>
+        a.routeIds.some((r) => station.selectedRoutes.includes(r)),
+      );
+      fragment.appendChild(renderStation(station, stationDeps, stationAlerts));
     }
 
     const updatedEl = document.createElement('div');
@@ -138,7 +144,7 @@ async function refresh(config: AppConfig, boardEl: HTMLElement): Promise<void> {
       }
     });
   } catch {
-    if (boardEl.childElementCount === 0) {
+    if (isFirstLoad) {
       boardEl.innerHTML =
         '<div class="board-error">Could not fetch departures. Retrying…</div>';
     }
@@ -170,7 +176,7 @@ function tickTimes(): void {
   });
 }
 
-function renderStation(station: SelectedStation, departures: Departure[]): HTMLElement {
+function renderStation(station: SelectedStation, departures: Departure[], alerts: ServiceAlert[]): HTMLElement {
   const section = document.createElement('div');
   section.className = 'station-section';
 
@@ -179,7 +185,11 @@ function renderStation(station: SelectedStation, departures: Departure[]): HTMLE
   header.textContent = station.stationName;
   section.appendChild(header);
 
-  const maxRows = station.directions.length > 1 ? 6 : 12;
+  for (const alert of alerts) {
+    section.appendChild(renderAlertBanner(alert));
+  }
+
+  const maxRows = station.directions.length > 1 ? 5 : 10;
   for (const dir of station.directions) {
     const dirDeps = departures.filter((d) => d.direction === dir);
     const label = directionLabel(station.selectedRoutes, dir);
@@ -187,6 +197,70 @@ function renderStation(station: SelectedStation, departures: Departure[]): HTMLE
   }
 
   return section;
+}
+
+function createAlertBullet(routeId: string): SVGSVGElement {
+  const style = getLineStyle(routeId);
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', '22');
+  svg.setAttribute('height', '22');
+  svg.setAttribute('viewBox', '0 0 22 22');
+  svg.classList.add('alert-bullet');
+
+  const circle = document.createElementNS(ns, 'circle');
+  circle.setAttribute('cx', '11');
+  circle.setAttribute('cy', '11');
+  circle.setAttribute('r', '11');
+  circle.setAttribute('fill', style.bg);
+
+  const text = document.createElementNS(ns, 'text');
+  text.setAttribute('x', '11');
+  text.setAttribute('y', '11');
+  text.setAttribute('text-anchor', 'middle');
+  text.setAttribute('dominant-baseline', 'central');
+  text.setAttribute('fill', style.text);
+  text.setAttribute('font-family', "Helvetica, 'Helvetica Neue', Arial, sans-serif");
+  text.setAttribute('font-size', '13');
+  text.setAttribute('font-weight', '700');
+  text.textContent = style.label;
+
+  svg.appendChild(circle);
+  svg.appendChild(text);
+  return svg;
+}
+
+function renderAlertBanner(alert: ServiceAlert): HTMLElement {
+  const banner = document.createElement('div');
+  const effectClass =
+    alert.effect === 1 || alert.effect === 2
+      ? 'alert-severe'
+      : alert.effect === 3
+      ? 'alert-delay'
+      : 'alert-info';
+  banner.className = `alert-banner ${effectClass}`;
+
+  // Collapse any newlines/extra whitespace MTA embeds in alert text
+  const header = alert.header.replace(/\s+/g, ' ').trim();
+
+  // Replace [7], [A/C/E], [N] etc. with inline route bullets
+  const regex = /\[([A-Z0-9/]+)\]/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(header)) !== null) {
+    if (match.index > lastIndex) {
+      banner.appendChild(document.createTextNode(header.slice(lastIndex, match.index)));
+    }
+    for (const routeId of match[1].split('/')) {
+      banner.appendChild(createAlertBullet(routeId.trim()));
+    }
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < header.length) {
+    banner.appendChild(document.createTextNode(header.slice(lastIndex)));
+  }
+
+  return banner;
 }
 
 function renderDirectionSubsection(label: string, departures: Departure[], maxRows: number): HTMLElement {
@@ -211,11 +285,13 @@ function renderDepTable(departures: Departure[], maxRows: number = 12): HTMLElem
     '<span>Line</span><span class="col-dest">To</span><span class="col-time">Arrives</span>';
   container.appendChild(colHeaders);
 
+  const rowCount = Math.min(departures.length || 6, maxRows);
   if (!departures.length) {
-    const empty = document.createElement('div');
-    empty.className = 'no-deps';
-    empty.textContent = 'No upcoming departures';
-    container.appendChild(empty);
+    for (let i = 0; i < rowCount; i++) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'dep-row dep-row-placeholder';
+      container.appendChild(placeholder);
+    }
     return container;
   }
 

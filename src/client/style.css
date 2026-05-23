@@ -31,7 +31,7 @@ html, body {
   height: 40px;
   border-radius: 50%;
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 1.32rem;
   flex-shrink: 0;
   cursor: default;
   user-select: none;
@@ -392,11 +392,35 @@ html, body {
   50% { opacity: 0.45; }
 }
 
-.no-deps {
-  padding: 20px 0;
-  color: var(--muted);
-  font-size: 0.9rem;
+.dep-row-placeholder {
+  min-height: 62px;
+  pointer-events: none;
 }
+
+.station-header + .alert-banner { margin-top: 8px; }
+
+.alert-banner {
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.6;
+  padding: 8px 10px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--muted);
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
+.alert-severe { border-left-color: #cc1111; }
+.alert-delay  { border-left-color: #e8a000; }
+.alert-info   { border-left-color: var(--muted); }
+
+.alert-bullet {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0 3px;
+}
+.alert-bullet + .alert-bullet { margin-left: 0; }
 
 .board-updated {
   margin-top: 24px;

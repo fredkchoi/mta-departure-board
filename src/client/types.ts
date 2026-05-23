@@ -32,3 +32,9 @@ export interface DeparturesResponse {
   departures: Departure[];
   updatedAt: number;
 }
+
+export interface ServiceAlert {
+  routeIds: string[];
+  header: string;
+  effect: number;
+}

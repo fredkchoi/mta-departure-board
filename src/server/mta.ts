@@ -14,6 +14,18 @@ export interface Departure {
   stopId: string;
 }
 
+export interface ServiceAlert {
+  routeIds: string[];
+  header: string;
+  effect: number;
+}
+
+const ALERTS_FEED_URL =
+  'https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/camsys%2Fall-alerts';
+
+// GTFS-RT Effect enum — effects we suppress (informational noise)
+const SUPPRESSED_EFFECTS = new Set([5, 10]); // ADDITIONAL_SERVICE, NO_EFFECT
+
 function toTimestamp(value: number | Long | null | undefined): number | null {
   if (value == null) return null;
   if (value instanceof Long) return value.toNumber();
@@ -33,6 +45,53 @@ async function fetchFeed(
   } catch (err) {
     console.error(`Failed to fetch ${feedKey} feed:`, err);
     return null;
+  }
+}
+
+export async function getAlerts(): Promise<ServiceAlert[]> {
+  try {
+    const response = await fetch(ALERTS_FEED_URL);
+    if (!response.ok) return [];
+    const buffer = await response.arrayBuffer();
+    const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(new Uint8Array(buffer));
+
+    const now = Math.floor(Date.now() / 1000);
+    const alerts: ServiceAlert[] = [];
+
+    for (const entity of feed.entity) {
+      const alert = entity.alert;
+      if (!alert) continue;
+
+      const effect = typeof alert.effect === 'number' ? alert.effect : 0;
+      if (SUPPRESSED_EFFECTS.has(effect)) continue;
+
+      const isActive =
+        !alert.activePeriod?.length ||
+        alert.activePeriod.some((p) => {
+          const start = toTimestamp(p.start);
+          const end = toTimestamp(p.end);
+          return (start == null || start <= now) && (end == null || end >= now);
+        });
+      if (!isActive) continue;
+
+      const routeIds = (alert.informedEntity ?? [])
+        .filter((e) => e.routeId)
+        .map((e) => e.routeId!);
+      if (!routeIds.length) continue;
+
+      const header =
+        alert.headerText?.translation?.find((t) => t.language === 'en')?.text ??
+        alert.headerText?.translation?.[0]?.text ??
+        '';
+      if (!header) continue;
+
+      alerts.push({ routeIds, header, effect });
+    }
+
+    return alerts;
+  } catch (err) {
+    console.error('Failed to fetch alerts:', err);
+    return [];
   }
 }
 

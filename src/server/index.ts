@@ -1,18 +1,22 @@
 import express from 'express';
 import path from 'path';
+import { existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { config } from './config.js';
 import { loadStations, searchStations } from './stations.js';
-import { getDepartures } from './mta.js';
+import { getDepartures, getAlerts } from './mta.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 loadStations();
 
-// Serve the built client
 const clientDir = path.join(__dirname, '../../dist/client');
-app.use(express.static(clientDir));
+const hasBuiltClient = existsSync(path.join(clientDir, 'index.html'));
+
+if (hasBuiltClient) {
+  app.use(express.static(clientDir));
+}
 
 app.get('/api/stations/search', (req, res) => {
   const q = String(req.query.q ?? '');
@@ -39,10 +43,20 @@ app.get('/api/departures', async (req, res) => {
   }
 });
 
-// SPA fallback
-app.get('*', (req, res) => {
-  res.sendFile(path.join(clientDir, 'index.html'));
+app.get('/api/alerts', async (_req, res) => {
+  try {
+    const alerts = await getAlerts();
+    res.json({ alerts });
+  } catch {
+    res.json({ alerts: [] });
+  }
 });
+
+if (hasBuiltClient) {
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(clientDir, 'index.html'));
+  });
+}
 
 app.listen(config.port, () => {
   console.log(`MTA Departure Board → http://localhost:${config.port}`);
